@@ -1,7 +1,7 @@
 # File: centurion/game.py
 """
-Centurion game logic: face × suit counting, exact-100 wins by cards played,
-overshoot scoring by net cards, draw increments multiplier.
+Centurion game logic: face × suit counting, exact-100 wins, overshoot scoring by net cards,
+draw handling with multiplier progression, and clamped counter awards.
 """
 from .player import Player
 from .deck import Deck
@@ -49,45 +49,44 @@ class Game:
         """
         Execute a player's turn or handle draw:
         - On draw (all hands empty), increment multiplier, start next round, return None
-        - On scoring stop (multiple of 10 >=100), apply scoring or penalties, return scoring player
+        - On scoring stop (multiple of 10 >=100), award/clamp counters and return scoring player
         - Otherwise switch turn and continue, return the player who just played
         """
-        # Draw check before playing
+        # Draw detection
         if all(len(p.hand) == 0 for p in self.players):
-            # Increment multiplier on consecutive draws: 1→2, 2→3, etc.
+            # Increment multiplier for consecutive draws: 1→2, 2→3, etc.
             self.multiplier += 1
             self.start_round()
             return None
 
+        # Normal play
         player = self.players[self.current_player_idx]
-        # Track cards played this round
         self.cards_played_count[self.current_player_idx] += 1
         card = player.play_card(card_idx)
         self.current_total += card.count_value
 
-        # Stop on first multiple of ten >= 100
+        # Scoring check: first multiple of ten >= 100
         if self.current_total >= 100 and self.current_total % 10 == 0:
-            # Exact 100: award cards played
+            # Determine raw points
             if self.current_total == 100:
+                # Exact 100: points = cards played × multiplier
                 total_cards = sum(self.cards_played_count)
                 points = total_cards * self.multiplier
-                player.score += points
-                self.counters -= points
-                winner = player
             else:
-                # Overshoot: award net cards (cards played minus excess tens)
+                # Overshoot: net cards = cards played − excess tens
                 excess_tens = (self.current_total - 100) // 10
                 total_cards = sum(self.cards_played_count)
                 net_cards = total_cards - excess_tens
                 points = net_cards * self.multiplier
-                player.score += points
-                self.counters -= points
-                winner = player
+            # Clamp to remaining counters
+            awarded = min(points, self.counters)
+            player.score += awarded
+            self.counters -= awarded
             # Reset multiplier after scoring
             self.multiplier = 1
-            return winner
+            return player
 
-        # Continue round: switch to next player
+        # Continue round
         self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
         return player
 
